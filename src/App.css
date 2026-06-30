@@ -86,6 +86,10 @@ html, body {
   background: #fafafa;
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
 }
+.nav-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(44, 102, 114, 0.2);
+}
 .nav-btn:disabled {
   opacity: 0.4;
   cursor: default;
@@ -131,6 +135,7 @@ html, body {
   transition: transform 0.1s, box-shadow 0.15s;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  overflow: hidden;
 }
 .day:hover:not(.empty):not(.booked) {
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
@@ -173,8 +178,7 @@ html, body {
 .day.selected {
   background: #f3ead4;
   border-color: var(--gold);
-  outline: 2px solid var(--gold);
-  outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px var(--gold);
 }
 
 /* Booking bar */
@@ -208,6 +212,7 @@ html, body {
 }
 .booking-input:focus {
   border-color: var(--teal-top);
+  outline: none;
 }
 .booking-actions {
   display: flex;
