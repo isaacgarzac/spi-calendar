@@ -58,13 +58,13 @@ export default function App() {
     return unsubscribe
   }, [loadMonth])
 
-  // Map every booked day in the visible month to its reservation, so cells
-  // can render the guest name. The app allows a single-day changeover.
+  // Map every booked day in the visible month to its reservation(s).
+  // A day may belong to two reservations only when it is the shared changeover day.
   const bookedByDay = useMemo(() => {
     const map = new Map()
     for (const res of reservations) {
       for (const day of getOccupiedDays(res.start_date, res.end_date)) {
-        map.set(day, res)
+        map.set(day, [...(map.get(day) || []), res])
       }
     }
     return map
@@ -224,23 +224,37 @@ export default function App() {
         <div className="day-grid">
           {cells.map((iso, i) => {
             if (!iso) return <div key={`blank-${i}`} className="day empty" />
-            const res = bookedByDay.get(iso)
+            const reservationsForDay = bookedByDay.get(iso) || []
             const dayNum = Number(iso.split('-')[2])
+            const hasSplit = reservationsForDay.length === 2
             const classes = [
               'day',
-              res ? 'booked' : '',
+              reservationsForDay.length > 0 ? (hasSplit ? 'booked-split' : 'booked') : '',
               isSelected(iso) ? 'selected' : '',
             ].filter(Boolean).join(' ')
-            const bookedColor = res ? colorForName(res.guest_name) : undefined
+            const style = hasSplit
+              ? {
+                  background: `linear-gradient(90deg, ${colorForName(reservationsForDay[0].guest_name)} 50%, ${colorForName(reservationsForDay[1].guest_name)} 50%)`,
+                  borderColor: colorForName(reservationsForDay[0].guest_name),
+                }
+              : reservationsForDay.length === 1
+              ? {
+                  background: colorForName(reservationsForDay[0].guest_name),
+                  borderColor: colorForName(reservationsForDay[0].guest_name),
+                }
+              : undefined
+            const guestLabel = hasSplit
+              ? `${reservationsForDay[0].guest_name} / ${reservationsForDay[1].guest_name}`
+              : reservationsForDay[0]?.guest_name
             return (
               <button
                 key={iso}
                 className={classes}
                 onClick={() => handleDayClick(iso)}
-                style={bookedColor ? { background: bookedColor, borderColor: bookedColor } : undefined}
+                style={style}
               >
                 <span className="num">{dayNum}</span>
-                {res && <span className="who">{res.guest_name}</span>}
+                {reservationsForDay.length > 0 && <span className="who">{guestLabel}</span>}
               </button>
             )
           })}
