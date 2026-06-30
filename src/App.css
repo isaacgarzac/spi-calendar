@@ -140,10 +140,13 @@ html, body {
 .day:hover:not(.empty):not(.booked) {
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
 }
+.day:focus,
+.day:focus-visible {
+  outline: none;
+}
 .day:active:not(.empty) {
   transform: none;
   opacity: 0.92;
-  transform: none;
 }
 .day.empty {
   background: transparent;
