@@ -14,9 +14,8 @@ import {
   toISODate,
   formatRangeES,
 } from './utils/dates'
+import { colorForName } from './utils/colors'
 import './App.css'
-
-const BOOKING_COLOR = '#b8923f'
 
 // Navigation bounds: from the current month up to December 2029.
 const MAX_MONTH = { year: 2029, month: 11 } // Diciembre 2029
@@ -136,7 +135,7 @@ export default function App() {
         guest_name: name,
         start_date: start,
         end_date: end,
-        color: BOOKING_COLOR,
+        color: colorForName(name),
       })
       cancelSelection()
       await loadMonth()
@@ -195,8 +194,8 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <p className="app-eyebrow">SOUTH PADRE ISLAND</p>
-        <h1 className="app-title">Calendario del Depa 🌴</h1>
+        <p className="app-eyebrow">CALENDARIO SPI</p>
+        <h1 className="app-title">Los Corales 301 S 🦢</h1>
         <p className="app-subtitle">Reserva tus días — sin choques</p>
       </header>
 
@@ -237,8 +236,14 @@ export default function App() {
               res ? 'booked' : '',
               isSelected(iso) ? 'selected' : '',
             ].filter(Boolean).join(' ')
+            const bookedColor = res ? colorForName(res.guest_name) : undefined
             return (
-              <button key={iso} className={classes} onClick={() => handleDayClick(iso)}>
+              <button
+                key={iso}
+                className={classes}
+                onClick={() => handleDayClick(iso)}
+                style={bookedColor ? { background: bookedColor, borderColor: bookedColor } : undefined}
+              >
                 <span className="num">{dayNum}</span>
                 {res && <span className="who">{res.guest_name}</span>}
               </button>
@@ -280,7 +285,7 @@ export default function App() {
           <ul className="res-list">
             {sortedReservations.map((res) => (
               <li key={res.id} className="res-row">
-                <span className="res-dot" style={{ background: res.color || BOOKING_COLOR }} />
+                <span className="res-dot" style={{ background: colorForName(res.guest_name) }} />
                 <div className="res-info">
                   <div className="res-name">{res.guest_name}</div>
                   <div className="res-range">{formatRangeES(res.start_date, res.end_date)}</div>
@@ -301,8 +306,8 @@ function SetupNotice() {
   return (
     <div className="app">
       <header className="app-header">
-        <p className="app-eyebrow">SOUTH PADRE ISLAND</p>
-        <h1 className="app-title">Calendario del Depa 🌴</h1>
+        <p className="app-eyebrow">CALENDARIO SPI</p>
+        <h1 className="app-title">Los Corales 301 S 🦢</h1>
         <p className="app-subtitle">Configuración pendiente</p>
       </header>
       <main className="app-body">

@@ -132,12 +132,16 @@
   cursor: default;
 }
 .day.booked {
+  /* background/border color set inline per reservation */
   background: var(--gold);
   border-color: var(--gold);
-  color: #2f2710;
+  color: #fff;
 }
 .day.booked .num {
   font-weight: 700;
+}
+.day.booked .who {
+  color: rgba(255, 255, 255, 0.95);
 }
 .day .who {
   font-size: 11px;
