@@ -2,16 +2,18 @@
 // white text. A name always maps to the same color, so each person keeps a
 // consistent color across the calendar.
 const PALETTE = [
-  '#3b82f6', // azul
-  '#10b981', // verde esmeralda
+  '#2563eb', // azul
+  '#16a34a', // verde
   '#f97316', // naranja
-  '#8b5cf6', // morado
-  '#ec4899', // rosa
-  '#14b8a6', // turquesa
+  '#db2777', // fucsia
+  '#0ea5e9', // cyan
+  '#eab308', // amarillo
+  '#14b8a6', // teal
   '#ef4444', // rojo
-  '#6366f1', // índigo
-  '#0ea5e9', // celeste
-  '#d97706', // ámbar
+  '#7c3aed', // violeta
+  '#22c55e', // verde fuerte
+  '#f43f5e', // rosa fuerte
+  '#f59e0b', // ámbar
 ]
 
 export function colorForName(name) {
