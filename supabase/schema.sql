@@ -14,14 +14,37 @@ create table if not exists public.reservations (
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
 
-  constraint reservations_valid_range check (end_date >= start_date),
-
-  -- "Sin choques": no two reservations may cover the same day.
-  -- daterange '[]' makes both endpoints inclusive, matching the grid.
-  constraint reservations_no_overlap exclude using gist (
-    daterange(start_date, end_date, '[]') with &&
-  )
+  constraint reservations_valid_range check (end_date >= start_date)
 );
+
+create or replace function public.check_single_day_overlap()
+returns trigger as $$
+declare
+  existing record;
+begin
+  for existing in
+    select id, start_date, end_date
+    from public.reservations
+    where id is distinct from new.id
+  loop
+    if new.start_date <= existing.end_date and new.end_date >= existing.start_date then
+      if (
+        least(new.end_date, existing.end_date) - greatest(new.start_date, existing.start_date) + 1
+      ) > 1 then
+        raise exception 'No se permiten superposiciones de más de un día';
+      end if;
+    end if;
+  end loop;
+
+  return new;
+end;
+$$ language plpgsql;
+
+alter table public.reservations drop constraint if exists reservations_no_overlap;
+drop trigger if exists reservations_single_day_overlap_trigger on public.reservations;
+create trigger reservations_single_day_overlap_trigger
+  before insert or update on public.reservations
+  for each row execute function public.check_single_day_overlap();
 
 -- Keep updated_at fresh on every change.
 create or replace function public.set_updated_at()

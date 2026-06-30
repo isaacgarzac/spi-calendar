@@ -13,6 +13,8 @@ import {
   leadingOffset,
   toISODate,
   formatRangeES,
+  getOccupiedDays,
+  hasConflict,
 } from './utils/dates'
 import { colorForName } from './utils/colors'
 import './App.css'
@@ -57,25 +59,19 @@ export default function App() {
   }, [loadMonth])
 
   // Map every booked day in the visible month to its reservation, so cells
-  // can render the guest name. The DB constraint guarantees at most one
-  // reservation per day.
+  // can render the guest name. The app allows a single-day changeover.
   const bookedByDay = useMemo(() => {
     const map = new Map()
     for (const res of reservations) {
-      let d = new Date(res.start_date + 'T00:00:00')
-      const end = new Date(res.end_date + 'T00:00:00')
-      while (d <= end) {
-        map.set(toISODate(d), res)
-        d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
+      for (const day of getOccupiedDays(res.start_date, res.end_date)) {
+        map.set(day, res)
       }
     }
     return map
   }, [reservations])
 
   function rangeHasConflict(startISO, endISO) {
-    return reservations.some(
-      (r) => r.start_date <= endISO && r.end_date >= startISO,
-    )
+    return hasConflict(startISO, endISO, reservations)
   }
 
   function isSelected(iso) {
@@ -87,7 +83,6 @@ export default function App() {
   }
 
   function handleDayClick(iso) {
-    if (bookedByDay.has(iso)) return // can't book over an existing reservation
     setError('')
 
     if (!selection.start || selection.end) {

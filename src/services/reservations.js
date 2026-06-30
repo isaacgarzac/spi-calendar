@@ -1,4 +1,5 @@
 import { supabase } from '../supabaseClient'
+import { hasConflict } from '../utils/dates'
 
 // Data access for the shared `reservations` table.
 // All functions throw on error so callers can try/catch.
@@ -22,6 +23,22 @@ export async function listReservationsInRange(fromISO, toISO) {
 // Create a reservation: { guest_name, start_date, end_date, color }.
 // Throws with code '23P01' if it overlaps an existing reservation.
 export async function createReservation(reservation) {
+  const { start_date, end_date } = reservation
+
+  const { data: existing, error: existingError } = await supabase
+    .from(TABLE)
+    .select('start_date, end_date')
+    .lte('start_date', end_date)
+    .gte('end_date', start_date)
+
+  if (existingError) throw existingError
+
+  if (hasConflict(start_date, end_date, existing || [])) {
+    const conflictError = new Error('No se permiten superposiciones de más de un día')
+    conflictError.code = '23P01'
+    throw conflictError
+  }
+
   const { data, error } = await supabase
     .from(TABLE)
     .insert(reservation)

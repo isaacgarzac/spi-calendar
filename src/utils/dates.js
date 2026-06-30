@@ -20,6 +20,40 @@ export function toISODate(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
+export function getOccupiedDays(startISO, endISO) {
+  const start = new Date(startISO + 'T00:00:00')
+  const end = new Date(endISO + 'T00:00:00')
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
+    return []
+  }
+
+  const days = []
+  let cursor = new Date(start)
+  while (cursor <= end) {
+    days.push(toISODate(cursor))
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1)
+  }
+  return days
+}
+
+export function hasConflict(startISO, endISO, reservations) {
+  const start = new Date(startISO + 'T00:00:00')
+  const end = new Date(endISO + 'T00:00:00')
+
+  return reservations.some((reservation) => {
+    const resStart = new Date(reservation.start_date + 'T00:00:00')
+    const resEnd = new Date(reservation.end_date + 'T00:00:00')
+
+    if (resEnd < start || resStart > end) return false
+
+    const overlapStart = new Date(Math.max(start.getTime(), resStart.getTime()))
+    const overlapEnd = new Date(Math.min(end.getTime(), resEnd.getTime()))
+    const overlapDays = Math.round((overlapEnd - overlapStart) / 86400000) + 1
+    return overlapDays > 1
+  })
+}
+
 export function monthLabel(year, month) {
   return `${MONTHS_ES[month]} ${year}`
 }
