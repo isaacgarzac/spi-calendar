@@ -3,9 +3,16 @@ import { isSupabaseConfigured } from './supabaseClient'
 import {
   listReservationsInRange,
   createReservation,
+  updateReservation,
   deleteReservation,
   subscribeToReservations,
+  adminLogin,
 } from './services/reservations'
+import {
+  getAdminPassword,
+  setAdminPassword as persistAdminPassword,
+  clearAdminPassword,
+} from './utils/adminSession'
 import {
   WEEKDAYS_ES,
   monthLabel,
@@ -24,23 +31,59 @@ const MAX_MONTH = { year: 2029, month: 11 } // Diciembre 2029
 const today = new Date()
 const MIN_MONTH = { year: today.getFullYear(), month: today.getMonth() }
 
+// New shareable public link: <origin>/#/corales-301  (read-only, no controls).
+// Admin entry: <origin>/#/admin
+const PUBLIC_SLUG = 'corales-301'
+
 // Compare two {year, month} objects: negative if a < b, etc.
 function compareMonth(a, b) {
   return a.year - b.year || a.month - b.month
 }
 
+// Derive the route from the URL hash. Only '#/admin' unlocks the edit gate;
+// everything else (empty, '#/corales-301', old link) is the public view.
+function routeFromHash() {
+  const h = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase()
+  return h === 'admin' ? 'admin' : 'public'
+}
+
+function friendlyError(err) {
+  const m = err?.message || ''
+  if (/autoriz/i.test(m) || err?.code === '42501') {
+    return 'Password incorrecta o la sesión expiró. Vuelve a entrar en modo edición.'
+  }
+  if (/superposi/i.test(m) || /overlap/i.test(m) || err?.code === '23P01') {
+    return 'Esas fechas chocan con otra reserva 🚫'
+  }
+  return m
+}
+
 export default function App() {
+  const [route, setRoute] = useState(routeFromHash())
+  const [adminPassword, setAdminPassword] = useState(getAdminPassword())
+
   const [view, setView] = useState({ ...MIN_MONTH })
   const [reservations, setReservations] = useState([])
   const [selection, setSelection] = useState({ start: null, end: null })
   const [guestName, setGuestName] = useState('')
+  const [editingId, setEditingId] = useState(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // Edit controls are visible only on the admin route WITH a valid session.
+  const editMode = route === 'admin' && Boolean(adminPassword)
 
   const { year, month } = view
 
   const monthStart = toISODate(new Date(year, month, 1))
   const monthEnd = toISODate(new Date(year, month, daysInMonth(year, month)))
+
+  // Keep route in sync with the URL hash.
+  useEffect(() => {
+    const onHashChange = () => setRoute(routeFromHash())
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
 
   const loadMonth = useCallback(async () => {
     try {
@@ -71,7 +114,11 @@ export default function App() {
   }, [reservations])
 
   function rangeHasConflict(startISO, endISO) {
-    return hasConflict(startISO, endISO, reservations)
+    // When editing, ignore the reservation being moved so it doesn't clash with itself.
+    const others = editingId
+      ? reservations.filter((r) => r.id !== editingId)
+      : reservations
+    return hasConflict(startISO, endISO, others)
   }
 
   function isSelected(iso) {
@@ -83,6 +130,7 @@ export default function App() {
   }
 
   function handleDayClick(iso) {
+    if (!editMode) return
     setError('')
 
     if (!selection.start || selection.end) {
@@ -107,10 +155,18 @@ export default function App() {
   function cancelSelection() {
     setSelection({ start: null, end: null })
     setGuestName('')
+    setEditingId(null)
     setError('')
   }
 
-  async function handleReservar() {
+  function startEditing(res) {
+    setError('')
+    setEditingId(res.id)
+    setGuestName(res.guest_name)
+    setSelection({ start: res.start_date, end: res.end_date })
+  }
+
+  async function handleSave() {
     const name = guestName.trim()
     if (!name) {
       setError('Escribe un nombre para la reserva.')
@@ -126,33 +182,45 @@ export default function App() {
 
     try {
       setSaving(true)
-      await createReservation({
-        guest_name: name,
-        start_date: start,
-        end_date: end,
-        color: colorForName(name),
-      })
+      if (editingId) {
+        await updateReservation(adminPassword, editingId, {
+          guest_name: name,
+          start_date: start,
+          end_date: end,
+        })
+      } else {
+        await createReservation(adminPassword, {
+          guest_name: name,
+          start_date: start,
+          end_date: end,
+          color: colorForName(name),
+        })
+      }
       cancelSelection()
       await loadMonth()
     } catch (err) {
-      setError(
-        err.code === '23P01' || /overlap/i.test(err.message || '')
-          ? 'Esas fechas chocan con otra reserva 🚫'
-          : 'No se pudo guardar: ' + err.message,
-      )
+      setError(friendlyError(err))
     } finally {
       setSaving(false)
     }
   }
 
   async function handleDelete(res) {
-    if (!window.confirm(`¿Borrar la reserva de ${res.guest_name}?`)) return
+    const label = res.locked ? `${res.guest_name} (bloqueada 🔒)` : res.guest_name
+    if (!window.confirm(`¿Borrar la reserva de ${label}?`)) return
     try {
-      await deleteReservation(res.id)
+      await deleteReservation(adminPassword, res.id)
+      if (editingId === res.id) cancelSelection()
       await loadMonth()
     } catch (err) {
-      setError('No se pudo borrar: ' + err.message)
+      setError(friendlyError(err))
     }
+  }
+
+  function handleLogout() {
+    clearAdminPassword()
+    setAdminPassword(null)
+    cancelSelection()
   }
 
   function changeMonth(delta) {
@@ -174,6 +242,18 @@ export default function App() {
     return <SetupNotice />
   }
 
+  // Admin route without a valid session → show the login gate.
+  if (route === 'admin' && !adminPassword) {
+    return (
+      <AdminLogin
+        onSuccess={(pw) => {
+          persistAdminPassword(pw)
+          setAdminPassword(pw)
+        }}
+      />
+    )
+  }
+
   // Build grid cells: leading blanks + each day of the month.
   const cells = []
   const offset = leadingOffset(year, month)
@@ -191,8 +271,19 @@ export default function App() {
       <header className="app-header">
         <p className="app-eyebrow">CALENDARIO SPI</p>
         <h1 className="app-title">Los Corales 301 S 🦢</h1>
-        <p className="app-subtitle">Reserva tus días — sin choques</p>
+        <p className="app-subtitle">
+          {editMode ? 'Modo edición activo' : 'Calendario de la familia'}
+        </p>
       </header>
+
+      {editMode && (
+        <div className="admin-bar">
+          <span className="admin-badge">✏️ Modo edición</span>
+          <button className="admin-logout" onClick={handleLogout}>
+            Salir
+          </button>
+        </div>
+      )}
 
       <main className="app-body">
         <div className="month-nav">
@@ -231,6 +322,7 @@ export default function App() {
               'day',
               reservationsForDay.length > 0 ? (hasSplit ? 'booked-split' : 'booked') : '',
               isSelected(iso) ? 'selected' : '',
+              editMode ? '' : 'readonly',
             ].filter(Boolean).join(' ')
             const style = hasSplit
               ? {
@@ -250,7 +342,7 @@ export default function App() {
               <button
                 key={iso}
                 className={classes}
-                onClick={() => handleDayClick(iso)}
+                onClick={editMode ? () => handleDayClick(iso) : undefined}
                 style={style}
               >
                 <span className="num">{dayNum}</span>
@@ -260,9 +352,10 @@ export default function App() {
           })}
         </div>
 
-        {selection.start && (
+        {editMode && selection.start && (
           <div className="booking-bar">
             <div className="booking-range">
+              {editingId ? 'Editando: ' : ''}
               {formatRangeES(selection.start, selection.end || selection.start)}
             </div>
             <input
@@ -271,15 +364,14 @@ export default function App() {
               placeholder="¿Quién se queda? (ej. Mamá)"
               value={guestName}
               onChange={(e) => setGuestName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleReservar()}
-              autoFocus
+              onKeyDown={(e) => e.key === 'Enter' && handleSave()}
             />
             <div className="booking-actions">
               <button className="btn btn-ghost" onClick={cancelSelection} disabled={saving}>
                 Cancelar
               </button>
-              <button className="btn btn-primary" onClick={handleReservar} disabled={saving}>
-                {saving ? 'Guardando…' : 'Reservar'}
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? 'Guardando…' : editingId ? 'Guardar cambios' : 'Reservar'}
               </button>
             </div>
           </div>
@@ -289,23 +381,92 @@ export default function App() {
 
         <h2 className="section-title">RESERVAS DEL MES</h2>
         {sortedReservations.length === 0 ? (
-          <p className="empty-list">Aún no hay reservas este mes.</p>
+          <p className="empty-list">No hay reservas este mes.</p>
         ) : (
           <ul className="res-list">
             {sortedReservations.map((res) => (
               <li key={res.id} className="res-row">
                 <span className="res-dot" style={{ background: colorForName(res.guest_name) }} />
                 <div className="res-info">
-                  <div className="res-name">{res.guest_name}</div>
+                  <div className="res-name">
+                    {res.guest_name}
+                    {res.locked && <span className="res-lock" title="Bloqueada">🔒</span>}
+                  </div>
                   <div className="res-range">{formatRangeES(res.start_date, res.end_date)}</div>
                 </div>
-                <button className="res-delete" onClick={() => handleDelete(res)}>
-                  Borrar
-                </button>
+                {editMode && (
+                  <div className="res-actions">
+                    <button className="res-edit" onClick={() => startEditing(res)}>
+                      Editar
+                    </button>
+                    <button className="res-delete" onClick={() => handleDelete(res)}>
+                      Borrar
+                    </button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
         )}
+      </main>
+    </div>
+  )
+}
+
+function AdminLogin({ onSuccess }) {
+  const [pw, setPw] = useState('')
+  const [error, setError] = useState('')
+  const [checking, setChecking] = useState(false)
+
+  async function submit() {
+    const value = pw.trim()
+    if (!value) return
+    setChecking(true)
+    setError('')
+    try {
+      const ok = await adminLogin(value)
+      if (ok) {
+        onSuccess(value)
+      } else {
+        setError('Password incorrecta.')
+      }
+    } catch (err) {
+      setError('No se pudo verificar: ' + err.message)
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  return (
+    <div className="app">
+      <header className="app-header">
+        <p className="app-eyebrow">CALENDARIO SPI</p>
+        <h1 className="app-title">Los Corales 301 S 🦢</h1>
+        <p className="app-subtitle">Modo edición</p>
+      </header>
+      <main className="app-body">
+        <div className="booking-bar" style={{ position: 'static' }}>
+          <div className="booking-range">Ingresa la password de admin</div>
+          <input
+            className="booking-input"
+            type="password"
+            autoFocus
+            placeholder="Password"
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && submit()}
+          />
+          <div className="booking-actions">
+            <button className="btn btn-primary" onClick={submit} disabled={checking}>
+              {checking ? 'Verificando…' : 'Entrar'}
+            </button>
+          </div>
+          {error && <p className="error" style={{ marginBottom: 0 }}>{error}</p>}
+        </div>
+        <p className="empty-list" style={{ marginTop: 16 }}>
+          Para ver el calendario, usa el enlace público:{' '}
+          <code>#/{PUBLIC_SLUG}</code>
+        </p>
       </main>
     </div>
   )

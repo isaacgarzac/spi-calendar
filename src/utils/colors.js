@@ -16,8 +16,18 @@ const PALETTE = [
   '#f59e0b', // ámbar
 ]
 
+// Fixed colors for the rotation owners (case-insensitive). Any other name
+// falls back to the hashed palette below.
+const FIXED_COLORS = {
+  nana: '#16a34a',   // verde
+  jaime: '#f97316',  // naranja
+  javier: '#2563eb', // azul
+  ale: '#ec4899',    // rosa
+}
+
 export function colorForName(name) {
   const key = (name || '').trim().toLowerCase()
+  if (FIXED_COLORS[key]) return FIXED_COLORS[key]
   let hash = 0
   for (let i = 0; i < key.length; i++) {
     hash = (hash * 31 + key.charCodeAt(i)) >>> 0

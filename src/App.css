@@ -16,6 +16,13 @@ html, body {
   touch-action: manipulation;
 }
 
+/* Re-enable text selection/editing on form fields. Without this, the global
+   `user-select: none` above stops inputs from being editable in iOS Safari. */
+input, textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .app {
   max-width: 460px;
   margin: 0 auto;
@@ -48,6 +55,35 @@ html, body {
   margin: 0;
   font-size: 15px;
   opacity: 0.82;
+}
+
+/* Admin bar (edit mode) */
+.admin-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: #2b2b2b;
+  color: #fff;
+}
+.admin-badge {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.admin-logout {
+  background: rgba(255, 255, 255, 0.14);
+  border: none;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.admin-logout:hover {
+  background: rgba(255, 255, 255, 0.24);
 }
 
 /* Body */
@@ -183,6 +219,13 @@ html, body {
   border-color: var(--gold);
   box-shadow: inset 0 0 0 2px var(--gold);
 }
+/* Public / read-only calendar: days aren't interactive. */
+.day.readonly {
+  cursor: default;
+}
+.day.readonly:hover:not(.empty):not(.booked) {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
 
 /* Booking bar */
 .booking-bar {
@@ -297,10 +340,28 @@ html, body {
   font-size: 17px;
   color: var(--ink);
 }
+.res-lock {
+  margin-left: 6px;
+  font-size: 13px;
+}
 .res-range {
   color: var(--muted);
   font-size: 14px;
   margin-top: 2px;
+}
+.res-actions {
+  display: flex;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+.res-edit {
+  background: none;
+  border: none;
+  color: var(--teal-top);
+  font-size: 15px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
 }
 .res-delete {
   background: none;
