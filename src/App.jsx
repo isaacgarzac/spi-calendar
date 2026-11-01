@@ -23,8 +23,16 @@ import {
   getOccupiedDays,
   hasConflict,
 } from './utils/dates'
-import { colorForName } from './utils/colors'
+import { colorForName, tintForName } from './utils/colors'
 import './App.css'
+
+// Rotation owners shown as one-tap name chips in the booking sheet.
+const QUICK_NAMES = ['Nana', 'Jaime', 'Javier', 'Ale']
+
+function isQuickName(name) {
+  const key = (name || '').trim().toLowerCase()
+  return QUICK_NAMES.some((n) => n.toLowerCase() === key)
+}
 
 // Navigation bounds: from the current month up to December 2029.
 const MAX_MONTH = { year: 2029, month: 11 } // Diciembre 2029
@@ -66,6 +74,7 @@ export default function App() {
   const [reservations, setReservations] = useState([])
   const [selection, setSelection] = useState({ start: null, end: null })
   const [guestName, setGuestName] = useState('')
+  const [otherMode, setOtherMode] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -155,6 +164,7 @@ export default function App() {
   function cancelSelection() {
     setSelection({ start: null, end: null })
     setGuestName('')
+    setOtherMode(false)
     setEditingId(null)
     setError('')
   }
@@ -163,7 +173,20 @@ export default function App() {
     setError('')
     setEditingId(res.id)
     setGuestName(res.guest_name)
+    setOtherMode(!isQuickName(res.guest_name))
     setSelection({ start: res.start_date, end: res.end_date })
+  }
+
+  function pickName(name) {
+    setGuestName(name)
+    setOtherMode(false)
+    setError('')
+  }
+
+  function pickOther() {
+    if (!otherMode && isQuickName(guestName)) setGuestName('')
+    setOtherMode(true)
+    setError('')
   }
 
   async function handleSave() {
@@ -262,30 +285,24 @@ export default function App() {
     cells.push(toISODate(new Date(year, month, day)))
   }
 
+  const todayISO = toISODate(new Date())
   const sortedReservations = [...reservations].sort((a, b) =>
     a.start_date.localeCompare(b.start_date),
   )
+  const sheetOpen = editMode && Boolean(selection.start)
+
+  let sheetHint = ''
+  if (sheetOpen && !selection.end) {
+    sheetHint = 'Toca el día de salida, o reserva solo este día.'
+  } else if (sheetOpen && editingId) {
+    sheetHint = 'Toca un día del calendario para escoger fechas nuevas.'
+  }
 
   return (
     <div className="app">
-      <header className="app-header">
-        <p className="app-eyebrow">CALENDARIO SPI</p>
-        <h1 className="app-title">Los Corales 301 S 🦢</h1>
-        <p className="app-subtitle">
-          {editMode ? 'Modo edición activo' : 'Calendario de la familia'}
-        </p>
-      </header>
+      <PostalHeader editMode={editMode} onLogout={handleLogout} />
 
-      {editMode && (
-        <div className="admin-bar">
-          <span className="admin-badge">✏️ Modo edición</span>
-          <button className="admin-logout" onClick={handleLogout}>
-            Salir
-          </button>
-        </div>
-      )}
-
-      <main className="app-body">
+      <main className={`app-body${sheetOpen ? ' with-sheet' : ''}`}>
         <div className="month-nav">
           <button
             className="nav-btn"
@@ -293,7 +310,7 @@ export default function App() {
             disabled={atMin}
             aria-label="Mes anterior"
           >
-            ‹
+            <ChevronIcon dir="left" />
           </button>
           <span className="month-label">{monthLabel(year, month)}</span>
           <button
@@ -302,114 +319,289 @@ export default function App() {
             disabled={atMax}
             aria-label="Mes siguiente"
           >
-            ›
+            <ChevronIcon dir="right" />
           </button>
         </div>
 
-        <div className="weekday-row">
+        <div className="cal-grid">
           {WEEKDAYS_ES.map((d, i) => (
-            <span key={i} className="weekday">{d}</span>
+            <span key={`wd-${i}`} className="weekday">{d}</span>
           ))}
-        </div>
-
-        <div className="day-grid">
           {cells.map((iso, i) => {
             if (!iso) return <div key={`blank-${i}`} className="day empty" />
-            const reservationsForDay = bookedByDay.get(iso) || []
+            const resForDay = bookedByDay.get(iso) || []
             const dayNum = Number(iso.split('-')[2])
-            const hasSplit = reservationsForDay.length === 2
+            const hasSplit = resForDay.length === 2
             const classes = [
               'day',
-              reservationsForDay.length > 0 ? (hasSplit ? 'booked-split' : 'booked') : '',
               isSelected(iso) ? 'selected' : '',
+              iso === todayISO ? 'today' : '',
               editMode ? '' : 'readonly',
             ].filter(Boolean).join(' ')
-            const style = hasSplit
-              ? {
-                  background: `linear-gradient(90deg, ${colorForName(reservationsForDay[0].guest_name)} 50%, ${colorForName(reservationsForDay[1].guest_name)} 50%)`,
-                  borderColor: colorForName(reservationsForDay[0].guest_name),
-                }
-              : reservationsForDay.length === 1
-              ? {
-                  background: colorForName(reservationsForDay[0].guest_name),
-                  borderColor: colorForName(reservationsForDay[0].guest_name),
-                }
-              : undefined
+
+            let style
+            if (hasSplit) {
+              const a = tintForName(resForDay[0].guest_name)
+              const b = tintForName(resForDay[1].guest_name)
+              style = {
+                background: `linear-gradient(135deg, ${a.bg} 50%, ${b.bg} 50%)`,
+                color: 'var(--ink)',
+              }
+            } else if (resForDay.length === 1) {
+              const t = tintForName(resForDay[0].guest_name)
+              style = { background: t.bg, color: t.fg }
+            }
+
             const guestLabel = hasSplit
-              ? `${reservationsForDay[0].guest_name} / ${reservationsForDay[1].guest_name}`
-              : reservationsForDay[0]?.guest_name
+              ? `${resForDay[0].guest_name} / ${resForDay[1].guest_name}`
+              : resForDay[0]?.guest_name
+
             return (
               <button
                 key={iso}
                 className={classes}
                 onClick={editMode ? () => handleDayClick(iso) : undefined}
                 style={style}
+                aria-label={guestLabel ? `${dayNum}, ${guestLabel}` : `${dayNum}, libre`}
               >
                 <span className="num">{dayNum}</span>
-                {reservationsForDay.length > 0 && <span className="who">{guestLabel}</span>}
+                <span className="who">
+                  {guestLabel || (editMode && isSelected(iso) ? 'libre' : '')}
+                </span>
               </button>
             )
           })}
         </div>
 
-        {editMode && selection.start && (
-          <div className="booking-bar">
-            <div className="booking-range">
-              {editingId ? 'Editando: ' : ''}
-              {formatRangeES(selection.start, selection.end || selection.start)}
-            </div>
-            <input
-              className="booking-input"
-              type="text"
-              placeholder="¿Quién se queda? (ej. Mamá)"
-              value={guestName}
-              onChange={(e) => setGuestName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-            />
-            <div className="booking-actions">
-              <button className="btn btn-ghost" onClick={cancelSelection} disabled={saving}>
-                Cancelar
-              </button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-                {saving ? 'Guardando…' : editingId ? 'Guardar cambios' : 'Reservar'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {error && <p className="error">{error}</p>}
+        {error && !sheetOpen && <p className="error">{error}</p>}
 
         <h2 className="section-title">RESERVAS DEL MES</h2>
         {sortedReservations.length === 0 ? (
           <p className="empty-list">No hay reservas este mes.</p>
         ) : (
           <ul className="res-list">
-            {sortedReservations.map((res) => (
-              <li key={res.id} className="res-row">
-                <span className="res-dot" style={{ background: colorForName(res.guest_name) }} />
-                <div className="res-info">
-                  <div className="res-name">
-                    {res.guest_name}
-                    {res.locked && <span className="res-lock" title="Bloqueada">🔒</span>}
+            {sortedReservations.map((res) => {
+              const tint = tintForName(res.guest_name)
+              return (
+                <li key={res.id} className="res-row">
+                  <span className="res-avatar" style={{ background: tint.bg, color: tint.fg }}>
+                    {(res.guest_name || '?').trim().charAt(0).toUpperCase()}
+                  </span>
+                  <div className="res-info">
+                    <div className="res-name">
+                      {res.guest_name}
+                      {res.locked && (
+                        <span className="res-lock" title="Rotación fija">
+                          <LockIcon />
+                        </span>
+                      )}
+                    </div>
+                    <div className="res-range">{formatRangeES(res.start_date, res.end_date)}</div>
                   </div>
-                  <div className="res-range">{formatRangeES(res.start_date, res.end_date)}</div>
-                </div>
-                {editMode && (
-                  <div className="res-actions">
-                    <button className="res-edit" onClick={() => startEditing(res)}>
-                      Editar
-                    </button>
-                    <button className="res-delete" onClick={() => handleDelete(res)}>
-                      Borrar
-                    </button>
-                  </div>
-                )}
-              </li>
-            ))}
+                  {editMode && (
+                    <div className="res-actions">
+                      <button className="res-btn res-move" onClick={() => startEditing(res)}>
+                        <MoveIcon />
+                        Mover fechas
+                      </button>
+                      <button
+                        className="res-btn res-delete"
+                        onClick={() => handleDelete(res)}
+                        aria-label={`Borrar reserva de ${res.guest_name}`}
+                      >
+                        <TrashIcon />
+                      </button>
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         )}
       </main>
+
+      {sheetOpen && (
+        <section className="sheet" aria-label={editingId ? 'Mover reserva' : 'Nueva reserva'}>
+          <div className="sheet-handle" />
+          <div>
+            <h2 className="sheet-title">{editingId ? 'Mover reserva' : 'Nueva reserva'}</h2>
+            <p className="sheet-range">
+              {formatRangeES(selection.start, selection.end || selection.start)}
+            </p>
+            {sheetHint && <p className="sheet-hint">{sheetHint}</p>}
+          </div>
+
+          <div>
+            <div className="sheet-label">¿QUIÉN SE QUEDA?</div>
+            <div className="chips">
+              {QUICK_NAMES.map((n) => {
+                const active = !otherMode && guestName.trim().toLowerCase() === n.toLowerCase()
+                return (
+                  <button
+                    key={n}
+                    className={`chip${active ? ' active' : ''}`}
+                    aria-pressed={active}
+                    onClick={() => pickName(n)}
+                  >
+                    {active && <CheckIcon />}
+                    {n}
+                  </button>
+                )
+              })}
+              <button
+                className={`chip other${otherMode ? ' active' : ''}`}
+                aria-pressed={otherMode}
+                onClick={pickOther}
+              >
+                Otro…
+              </button>
+            </div>
+            {otherMode && (
+              <input
+                className="booking-input"
+                type="text"
+                autoFocus
+                placeholder="Escribe el nombre"
+                aria-label="Nombre de quien se queda"
+                value={guestName}
+                onChange={(e) => setGuestName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+              />
+            )}
+          </div>
+
+          {error && <p className="error">{error}</p>}
+
+          <div className="sheet-actions">
+            <button className="btn btn-ghost" onClick={cancelSelection} disabled={saving}>
+              Cancelar
+            </button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+              {saving ? 'Guardando…' : editingId ? 'Guardar' : 'Reservar'}
+            </button>
+          </div>
+        </section>
+      )}
     </div>
+  )
+}
+
+function PostalHeader({ editMode = false, onLogout }) {
+  return (
+    <header className="postal-header">
+      <svg
+        className="postal-palms"
+        width="130"
+        height="196"
+        viewBox="260 0 130 196"
+        aria-hidden="true"
+      >
+        <path d="M300 196 C304 150 312 110 326 70" stroke="#14324F" strokeWidth="5" fill="none" strokeLinecap="round" />
+        <path d="M326 70 c-20 -10 -40 -6 -54 8 M326 70 c-14 -18 -34 -24 -52 -18 M326 70 c4 -22 18 -34 38 -38 M326 70 c18 -8 38 -4 52 10 M326 70 c10 10 14 26 10 42" stroke="#14324F" strokeWidth="5" fill="none" strokeLinecap="round" />
+        <path d="M352 196 C354 166 358 140 366 116" stroke="#14324F" strokeWidth="4" fill="none" strokeLinecap="round" />
+        <path d="M366 116 c-14 -8 -28 -4 -38 6 M366 116 c-8 -14 -22 -18 -36 -14 M366 116 c4 -16 14 -24 28 -26 M366 116 c12 -4 24 0 32 10" stroke="#14324F" strokeWidth="4" fill="none" strokeLinecap="round" />
+      </svg>
+      <div className="postal-sand" />
+
+      <div className="postal-top">
+        {editMode ? <span className="postal-badge">EDITOR</span> : <span />}
+        {editMode && onLogout && (
+          <button className="icon-btn-light" onClick={onLogout} aria-label="Salir del editor">
+            <LogoutIcon />
+          </button>
+        )}
+      </div>
+
+      <div className="postal-brand">
+        <svg className="postal-umbrellas" width="88" height="26" viewBox="0 0 88 26" aria-hidden="true">
+          {[
+            ['#6CCBC6', 2, 4],
+            ['#F097C0', 31, 2],
+            ['#FFE21A', 60, 4],
+          ].map(([color, x, y]) => (
+            <g key={color} transform={`translate(${x} ${y}) rotate(-10 13 12)`}>
+              <path d="M0 13 Q13 -3 26 13 Q19.5 9.5 13 13 Q6.5 9.5 0 13 Z" fill={color} />
+              <path d="M13 12 L15 24" stroke={color} strokeWidth="2.2" strokeLinecap="round" />
+            </g>
+          ))}
+        </svg>
+        <span className="postal-script">South Padre</span>
+        <span className="postal-sign">LOS CORALES · 301 S</span>
+      </div>
+    </header>
+  )
+}
+
+function Icon({ children, size = 20, strokeWidth = 2.2 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  )
+}
+
+function ChevronIcon({ dir }) {
+  return (
+    <Icon strokeWidth={2.4}>
+      <path d={dir === 'left' ? 'M15 18l-6-6 6-6' : 'M9 18l6-6-6-6'} />
+    </Icon>
+  )
+}
+
+function LogoutIcon() {
+  return (
+    <Icon strokeWidth={2}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" />
+      <path d="M21 12H9" />
+    </Icon>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <Icon size={16} strokeWidth={3}>
+      <path d="M5 12l5 5 9-10" />
+    </Icon>
+  )
+}
+
+function MoveIcon() {
+  return (
+    <Icon size={18}>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M16 3v4M8 3v4M3 10h18" />
+      <path d="M10 15h6M13 12l3 3-3 3" />
+    </Icon>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <Icon size={20}>
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6l-1 14H6L5 6" />
+    </Icon>
+  )
+}
+
+function LockIcon() {
+  return (
+    <Icon size={14} strokeWidth={2.4}>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </Icon>
   )
 }
 
@@ -439,32 +631,27 @@ function AdminLogin({ onSuccess }) {
 
   return (
     <div className="app">
-      <header className="app-header">
-        <p className="app-eyebrow">CALENDARIO SPI</p>
-        <h1 className="app-title">Los Corales 301 S 🦢</h1>
-        <p className="app-subtitle">Modo edición</p>
-      </header>
+      <PostalHeader editMode />
       <main className="app-body">
-        <div className="booking-bar" style={{ position: 'static' }}>
-          <div className="booking-range">Ingresa la password de admin</div>
+        <div className="card">
+          <div className="card-title">Ingresa la contraseña del editor</div>
           <input
             className="booking-input"
             type="password"
             autoFocus
-            placeholder="Password"
+            placeholder="Contraseña"
+            aria-label="Contraseña"
             value={pw}
             onChange={(e) => setPw(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && submit()}
           />
-          <div className="booking-actions">
-            <button className="btn btn-primary" onClick={submit} disabled={checking}>
-              {checking ? 'Verificando…' : 'Entrar'}
-            </button>
-          </div>
-          {error && <p className="error" style={{ marginBottom: 0 }}>{error}</p>}
+          <button className="btn btn-blue" onClick={submit} disabled={checking}>
+            {checking ? 'Verificando…' : 'Entrar'}
+          </button>
+          {error && <p className="error" style={{ margin: 0 }}>{error}</p>}
         </div>
         <p className="empty-list" style={{ marginTop: 16 }}>
-          Para ver el calendario, usa el enlace público:{' '}
+          Para solo ver el calendario, usa el enlace público:{' '}
           <code>#/{PUBLIC_SLUG}</code>
         </p>
       </main>
@@ -475,13 +662,9 @@ function AdminLogin({ onSuccess }) {
 function SetupNotice() {
   return (
     <div className="app">
-      <header className="app-header">
-        <p className="app-eyebrow">CALENDARIO SPI</p>
-        <h1 className="app-title">Los Corales 301 S 🦢</h1>
-        <p className="app-subtitle">Configuración pendiente</p>
-      </header>
+      <PostalHeader />
       <main className="app-body">
-        <div className="booking-bar">
+        <div className="card">
           <p style={{ margin: 0, lineHeight: 1.5 }}>
             Falta conectar Supabase. Copia tus credenciales en el archivo{' '}
             <code>.env</code> y reinicia el servidor:
