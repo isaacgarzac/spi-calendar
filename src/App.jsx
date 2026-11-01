@@ -3,7 +3,6 @@ import { isSupabaseConfigured } from './supabaseClient'
 import {
   listReservationsInRange,
   createReservation,
-  updateReservation,
   deleteReservation,
   subscribeToReservations,
   adminLogin,
@@ -75,7 +74,6 @@ export default function App() {
   const [selection, setSelection] = useState({ start: null, end: null })
   const [guestName, setGuestName] = useState('')
   const [otherMode, setOtherMode] = useState(false)
-  const [editingId, setEditingId] = useState(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -123,11 +121,7 @@ export default function App() {
   }, [reservations])
 
   function rangeHasConflict(startISO, endISO) {
-    // When editing, ignore the reservation being moved so it doesn't clash with itself.
-    const others = editingId
-      ? reservations.filter((r) => r.id !== editingId)
-      : reservations
-    return hasConflict(startISO, endISO, others)
+    return hasConflict(startISO, endISO, reservations)
   }
 
   function isSelected(iso) {
@@ -165,16 +159,7 @@ export default function App() {
     setSelection({ start: null, end: null })
     setGuestName('')
     setOtherMode(false)
-    setEditingId(null)
     setError('')
-  }
-
-  function startEditing(res) {
-    setError('')
-    setEditingId(res.id)
-    setGuestName(res.guest_name)
-    setOtherMode(!isQuickName(res.guest_name))
-    setSelection({ start: res.start_date, end: res.end_date })
   }
 
   function pickName(name) {
@@ -205,20 +190,12 @@ export default function App() {
 
     try {
       setSaving(true)
-      if (editingId) {
-        await updateReservation(adminPassword, editingId, {
-          guest_name: name,
-          start_date: start,
-          end_date: end,
-        })
-      } else {
-        await createReservation(adminPassword, {
-          guest_name: name,
-          start_date: start,
-          end_date: end,
-          color: colorForName(name),
-        })
-      }
+      await createReservation(adminPassword, {
+        guest_name: name,
+        start_date: start,
+        end_date: end,
+        color: colorForName(name),
+      })
       cancelSelection()
       await loadMonth()
     } catch (err) {
@@ -233,7 +210,6 @@ export default function App() {
     if (!window.confirm(`¿Borrar la reserva de ${label}?`)) return
     try {
       await deleteReservation(adminPassword, res.id)
-      if (editingId === res.id) cancelSelection()
       await loadMonth()
     } catch (err) {
       setError(friendlyError(err))
@@ -291,12 +267,8 @@ export default function App() {
   )
   const sheetOpen = editMode && Boolean(selection.start)
 
-  let sheetHint = ''
-  if (sheetOpen && !selection.end) {
-    sheetHint = 'Toca el día de salida, o reserva solo este día.'
-  } else if (sheetOpen && editingId) {
-    sheetHint = 'Toca un día del calendario para escoger fechas nuevas.'
-  }
+  const sheetHint =
+    sheetOpen && !selection.end ? 'Toca el día de salida, o reserva solo este día.' : ''
 
   return (
     <div className="app">
@@ -404,10 +376,6 @@ export default function App() {
                   </div>
                   {editMode && (
                     <div className="res-actions">
-                      <button className="res-btn res-move" onClick={() => startEditing(res)}>
-                        <MoveIcon />
-                        Mover fechas
-                      </button>
                       <button
                         className="res-btn res-delete"
                         onClick={() => handleDelete(res)}
@@ -425,10 +393,10 @@ export default function App() {
       </main>
 
       {sheetOpen && (
-        <section className="sheet" aria-label={editingId ? 'Mover reserva' : 'Nueva reserva'}>
+        <section className="sheet" aria-label="Nueva reserva">
           <div className="sheet-handle" />
           <div>
-            <h2 className="sheet-title">{editingId ? 'Mover reserva' : 'Nueva reserva'}</h2>
+            <h2 className="sheet-title">Nueva reserva</h2>
             <p className="sheet-range">
               {formatRangeES(selection.start, selection.end || selection.start)}
             </p>
@@ -481,7 +449,7 @@ export default function App() {
               Cancelar
             </button>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-              {saving ? 'Guardando…' : editingId ? 'Guardar' : 'Reservar'}
+              {saving ? 'Guardando…' : 'Reservar'}
             </button>
           </div>
         </section>
@@ -576,16 +544,6 @@ function CheckIcon() {
   return (
     <Icon size={16} strokeWidth={3}>
       <path d="M5 12l5 5 9-10" />
-    </Icon>
-  )
-}
-
-function MoveIcon() {
-  return (
-    <Icon size={18}>
-      <rect x="3" y="5" width="18" height="16" rx="2" />
-      <path d="M16 3v4M8 3v4M3 10h18" />
-      <path d="M10 15h6M13 12l3 3-3 3" />
     </Icon>
   )
 }
