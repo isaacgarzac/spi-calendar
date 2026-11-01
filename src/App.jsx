@@ -300,7 +300,11 @@ export default function App() {
 
   return (
     <div className="app">
-      <PostalHeader editMode={editMode} onLogout={handleLogout} />
+      <PostalHeader
+        editMode={editMode}
+        badge={editMode ? '¡Bienvenida, Adriana!' : null}
+        onLogout={handleLogout}
+      />
 
       <main className={`app-body${sheetOpen ? ' with-sheet' : ''}`}>
         <div className="month-nav">
@@ -486,7 +490,7 @@ export default function App() {
   )
 }
 
-function PostalHeader({ editMode = false, onLogout }) {
+function PostalHeader({ editMode = false, badge, onLogout }) {
   return (
     <header className="postal-header">
       <svg
@@ -504,7 +508,7 @@ function PostalHeader({ editMode = false, onLogout }) {
       <div className="postal-sand" />
 
       <div className="postal-top">
-        {editMode ? <span className="postal-badge">EDITOR</span> : <span />}
+        {badge ? <span className="postal-badge">{badge}</span> : <span />}
         {editMode && onLogout && (
           <button className="icon-btn-light" onClick={onLogout} aria-label="Salir del editor">
             <LogoutIcon />
@@ -631,7 +635,7 @@ function AdminLogin({ onSuccess }) {
 
   return (
     <div className="app">
-      <PostalHeader editMode />
+      <PostalHeader badge="EDITOR" />
       <main className="app-body">
         <div className="card">
           <div className="card-title">Ingresa la contraseña del editor</div>
